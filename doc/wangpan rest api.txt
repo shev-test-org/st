@@ -1,0 +1,67 @@
+百度网盘，金山快盘，华为网盘的rest api接口。Amazon的rest api不是针对网盘的，所以没有参考
+
+这里主要是百度网盘为分析对象。主要包含的rest请求只有两种：GET和POST,没有PUT,CREATE请求。
+
+
+1.GET请求，包含：
+  获取用户空间配额， method:info
+  下载单个文件，     method:download
+  获取单个文件/目录的元信息, method:meta
+  获取目录下的文件列表, method: list
+  
+2.POST请求，包含：
+  上传单个文件， method:upload
+  分片上传—文件分片及上传 method:upload.  返回：分片文件的md5
+  分片上传—合并分片文件 method:createsuperfile.
+  创建目录, method:mkdir
+  批量获取文件/目录的元信息, method:meta
+  移动单个文件/目录, method:move
+  批量移动文件/目录, method:move
+  拷贝单个文件/目录, method:copy
+  批量拷贝文件/目录, method:copy
+  删除单个文件/目录, method:delete
+  批量删除文件/目录, method:delete
+  搜索, method:search
+  
+高级功能：
+1.GET请求，包含：
+  缩略图， method:generate
+  增量更新查询, method:diff
+  视频转码, method:streaming
+  获取流式文件列表, method:list
+  下载流式文件, method:download
+
+2.POST请求，包含：
+  秒传文件, method:rapidupload
+  添加离线下载任务, method:add_task
+  精确查询离线下载任务, method:query_task
+  查询离线下载任务列表, method:list_task
+  取消离线下载任务, method:cancel_task
+  查询回收站文件, method:listrecycle
+  还原单个文件或目录, method:restore
+  批量还原文件或目录, method:restore
+  清空回收站, method:delete
+
+从上可以看出，每个请求必带两个查询字段: method和access_token.access_token主要是用于用户身份验证的（单独一块）。
+而method字段，根据不同的请求，需要设置不同的值，如info/upload/download/delete。百度网盘
+是根据rest GET/POST请求分两大类，然后再由method来进行小类别的区分。华为网盘也是类似的分类方法。
+
+每个请求的基本格式包含，一个url，必备的method和access_token查询字段，以及若干个根据不同的请求
+而不同的查询字段参数。
+
+各个网盘的授权方式都是独立出来的，需要单独进行处理。
+百度网盘支持文件路径上传和文件内容上传两种，但是华为和金山的不支持文件内容直接上传，只支持文件路径上传。
+
+总体上来说，百度网盘和华为网盘类似。
+1. 都包含GET,POST请求进行大类别划分。
+2. 都利用http请求的querying的一个字段进行具体小类别的划分。
+3. 剩余的querying字段用于具体请求的参数。
+
+而，金山快盘有区别
+1. 金山快盘只有GET请求。
+2. 对每个请求加上不同子目录的方式进行小类别的划分。如：
+  创建文件夹： http://openapi.kuaipan.cn/1/fileops/create_folder
+  删除文件夹： http://openapi.kuaipan.cn/1/fileops/delete
+  移动文件夹： http://openapi.kuaipan.cn/1/fileops/move 
+
+感觉金山网盘的做法应该是不正规。
