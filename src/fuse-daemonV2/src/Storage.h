@@ -12,13 +12,15 @@ using namespace std;
 
 class Block {
 public:
-	Block(int ref, char *buf) {
+	Block(int ref, char *buf, int len) {
 		this->ref = ref;
 		this->buf = buf;
+		this->len = len;
 	}
 
 	int ref;
 	char *buf;
+	int len;
 };
 
 class Storage {

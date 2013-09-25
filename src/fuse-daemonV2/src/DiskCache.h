@@ -27,6 +27,18 @@ public:
 	virtual void unlock() {cacheMapLock.unlock();};
 
 private:
+	int getRefCount(int fd);
+	void setRefCount(int fd, int ref);
+
+	void getBuf(int fd, char *buf, int len);
+	void setBuf(int fd, char *buf, int len);
+
+public:
+	static void DiskCacheTest();
+	const string& getCacheDir() const;
+	void setCacheDir(const string& cacheDir);
+
+private:
 	string		cacheDir;
 	Lock		cacheMapLock;
 };

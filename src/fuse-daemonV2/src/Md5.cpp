@@ -31,7 +31,7 @@ documentation and/or software.
 */
 
 /* interface header */
-#include "md5.h"
+#include "Md5.h"
 
 /* system implementation headers */
 #include <stdio.h>
@@ -112,6 +112,13 @@ MD5::MD5(const std::string &text)
 {
   init();
   update(text.c_str(), text.length());
+  finalize();
+}
+
+MD5::MD5(const char *buf, size_type length)
+{
+  init();
+  update(buf, length);
   finalize();
 }
 

@@ -31,6 +31,9 @@ public:
 	virtual void lock() {cacheMapLock.lock();};
 	virtual void unlock() {cacheMapLock.unlock();};
 
+public:
+	static void MemoryCacheTest();
+
 private:
 	map<string, Block*> 	cacheMap;
 	Lock				cacheMapLock;

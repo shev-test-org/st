@@ -33,6 +33,9 @@
 #ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
 #endif
+#include "MemoryCache.h"
+#include "DiskCache.h"
+#include "../inc/bcs_sdk.h"
 
 static int xmp_getattr(const char *path, struct stat *stbuf) {
 	int res;
@@ -347,6 +350,7 @@ static int xmp_removexattr(const char *path, const char *name) {
 #endif /* HAVE_SETXATTR */
 
 static struct fuse_operations xmp_oper;
+void test();
 
 int main(int argc, char *argv[]) {
 	memset(&xmp_oper, 0x00, sizeof(xmp_oper));
@@ -385,5 +389,33 @@ int main(int argc, char *argv[]) {
 
 	umask(0);
 	//return fuse_main(argc, argv, &xmp_oper, NULL);
-	Md5Test::doTest();
+
+	test();
+}
+
+void bcs_sdk_test() {
+	map<string, string> header;
+	map<string, string> opt;
+	response res;
+	int ret;
+	char *ak = "iLsryT9U4HdhbOCOBGf0K7oM";
+	char *sk = "NzY52ezn9fP0nluj24wG5LP7i5T8H3B4";
+	char bucket[130] = "buck222222";
+	char *host = "bcs.duapp.com";
+	bcs_sdk *bcs = new bcs_sdk(ak, sk, host);
+	bcs->create_bucket(bucket, res);
+}
+
+void test() {
+	// md5 test
+	//Md5Test::doTest();
+
+	// memcache test
+	//MemoryCache::MemoryCacheTest();
+
+	// diskcache test
+	//DiskCache::DiskCacheTest();
+
+	// BCS SDK test
+	bcs_sdk_test();
 }
