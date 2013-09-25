@@ -13,8 +13,11 @@ public:
 	Lock();
 	virtual ~Lock();
 
-	void lock() {};
-	void unlock() {};
+	int lock();
+	int unlock();
+private:
+	pthread_mutex_t mutex;
+	pthread_t owner;
 };
 
 #endif /* LOCK_H_ */
