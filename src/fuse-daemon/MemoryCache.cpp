@@ -7,9 +7,21 @@
 
 #include "MemoryCache.h"
 
+#include <cassert>
+#include <map>
+#include <new>
+#include <string>
+#include <utility>
+
+#include "Lock.h"
+#include "Md5.h"
+#include "Storage.h"
+
+class Block;
+
 MemoryCache::MemoryCache() {
 	// TODO Auto-generated constructor stub
-
+	cacheMap.clear();
 }
 
 MemoryCache::~MemoryCache() {
@@ -17,3 +29,44 @@ MemoryCache::~MemoryCache() {
 }
 
 
+void MemoryCache::put(string key, char *buf)
+{
+	string md5 = Md5::getMd5(buf);
+	assert(key.compare(md5) == 0);
+	Block *block = NULL;
+	block = get(key);
+	if (NULL == block) {
+		block = new Block(1, buf);
+		cacheMap.insert(pair<string, Block*>(key, block));
+	} else {
+		block->ref ++;
+		assert(block->ref >= 0);
+	}
+}
+
+Block* MemoryCache::get(string key)
+{
+	map<string, Block*>::iterator it = cacheMap.find(key);
+	if (it != cacheMap.end()) {
+		return it->second;
+	}
+
+	return NULL;
+}
+
+void MemoryCache::remove(string key)
+{
+	cacheMap.erase(key);
+}
+
+void MemoryCache::dereference(string key)
+{
+	Block *block = get(key);
+	assert(block != NULL);
+
+	block->ref --;
+	assert(block->ref >= 0);
+	if (0 == block->ref) {
+		remove(key);
+	}
+}

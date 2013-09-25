@@ -19,15 +19,14 @@ public:
 	MemoryCache();
 	virtual ~MemoryCache();
 	virtual void put(string key, char *buf);
-	virtual char* get(string key);
+	virtual Block* get(string key);
 	virtual void remove(string key);
-	virtual bool isExisted(string key);
-	virtual int getReferenceCount();
 	virtual void dereference(string key);
-	virtual void reference(string key);
+	virtual void lock() {cacheMapLock.lock();};
+	virtual void unlock() {cacheMapLock.unlock();};
 
 private:
-	map<string, char*> 	cacheMap;
+	map<string, Block*> 	cacheMap;
 	Lock				cacheMapLock;
 };
 

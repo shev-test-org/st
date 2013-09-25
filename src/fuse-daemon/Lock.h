@@ -12,6 +12,9 @@ class Lock {
 public:
 	Lock();
 	virtual ~Lock();
+
+	void lock() {};
+	void unlock() {};
 };
 
 #endif /* LOCK_H_ */
