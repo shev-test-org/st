@@ -1,18 +1,18 @@
 /*
- * Md5.cpp
+ * Storage.cpp
  *
- *  Created on: Sep 24, 2013
+ *  Created on: Sep 23, 2013
  *      Author: root
  */
 
-#include "Md5.h"
+#include "Storage.h"
 
-Md5::Md5() {
+Storage::Storage() {
 	// TODO Auto-generated constructor stub
 
 }
 
-Md5::~Md5() {
+Storage::~Storage() {
 	// TODO Auto-generated destructor stub
 }
 

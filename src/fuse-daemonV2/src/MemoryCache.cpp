@@ -13,13 +13,7 @@
 #include <string>
 #include <utility>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-        #include "md5.h"
-#ifdef __cplusplus
-}
-#endif
+#include "md5.h"
 
 #include "Storage.h"
 
@@ -38,7 +32,6 @@ MemoryCache::~MemoryCache() {
 void MemoryCache::put(string key, char *buf, int len)
 {
 	char md5[33] = {0};
-	__md5_buffer(buf, len, md5);
 	assert(key.compare(md5) == 0);
 	Block *block = NULL;
 	block = get(key);
