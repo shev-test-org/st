@@ -35,6 +35,8 @@
 #endif
 #include "MemoryCache.h"
 #include "DiskCache.h"
+#include "BaiDuCloudStorage.h"
+#include "StorageMgr.h"
 #include "../inc/bcs_sdk.h"
 
 static int xmp_getattr(const char *path, struct stat *stbuf) {
@@ -393,18 +395,7 @@ int main(int argc, char *argv[]) {
 	test();
 }
 
-void bcs_sdk_test() {
-	map<string, string> header;
-	map<string, string> opt;
-	response res;
-	int ret;
-	char *ak = "iLsryT9U4HdhbOCOBGf0K7oM";
-	char *sk = "NzY52ezn9fP0nluj24wG5LP7i5T8H3B4";
-	char bucket[130] = "buck222222";
-	char *host = "bcs.duapp.com";
-	bcs_sdk *bcs = new bcs_sdk(ak, sk, host);
-	bcs->create_bucket(bucket, res);
-}
+
 
 void test() {
 	// md5 test
@@ -416,6 +407,9 @@ void test() {
 	// diskcache test
 	//DiskCache::DiskCacheTest();
 
-	// BCS SDK test
-	bcs_sdk_test();
+	// BaiDuCloud test
+	//BaiDuCloudStorage::BaiDuCloudStorageTest();
+
+	// StorageMgr test
+	StorageMgr::StorageMgrTest();
 }

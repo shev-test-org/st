@@ -14,14 +14,6 @@ class CloudStorage: public Storage {
 public:
 	CloudStorage();
 	virtual ~CloudStorage();
-
-	virtual void put(string key, char *buf, int len);
-	virtual Block* get(string key);
-	virtual void remove(string key);
-	virtual void dereference(string key);
-	virtual void lock();
-	virtual void unlock();
-
 };
 
 #endif /* CLOUDSTORAGE_H_ */

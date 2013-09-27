@@ -21,13 +21,16 @@ public:
 	StorageMgr();
 	virtual ~StorageMgr();
 
-	void put(string key, char *buf);
-	char* get(string key);
+	void put(string key, char *buf, int len);
+	Block* get(string key);
 	void remove(string key);
 private:
-	MemoryCache memoryCache;
-	DiskCache diskCache;
-	CloudStorage cloudStorage;
+	MemoryCache *memoryCache;
+	DiskCache *diskCache;
+	CloudStorage *cloudStorage;
+	Lock mgrLock;
+public:
+	static void StorageMgrTest();
 };
 
 #endif /* STORAGEMGR_H_ */
