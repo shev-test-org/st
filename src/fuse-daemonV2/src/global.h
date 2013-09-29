@@ -20,6 +20,7 @@ typedef struct _FPList {
 	int offsetToHeader;
 	uint64_t startFPIndex;
 	int fpCount;
+	int nextFpListOffset;
 
 	_FPList(int offsetToHeader, uint64_t startFPIndex, int fpCoun) {
 		this->offsetToHeader = offsetToHeader;
@@ -28,23 +29,32 @@ typedef struct _FPList {
 	}
 }FPList;
 
-typedef struct _file_header {
+
+typedef struct _FileHeader {
 	int magic; //'STBL'
 	int fileSize;
 	int blockSize;
 	int blockNum;
 	int crc;
-	char smallBuf[SMALL_FILE_SIZE];
 
-	// FP list ...
-	int fpListCount;
-	FPList fpList[1];
 
-}file_header_t;
+}FileHeader;
 
 typedef struct _FingerPoint {
 	char md5[33];
 }FingurePoint;
+
+/*
+ * file meta on-disk structure:
+ *
+ * | header cxt | fpList1 | fp1 | fp2 | fp 3 | ... | fpList2 | fp1 | fp2 | fp 3 | ... |
+ *
+ */
+typedef struct _FileMeta {
+	FileHeader header;
+	char smallBuf[SMALL_FILE_SIZE];
+	FPList firstFPList;
+}FileMeta;
 
 #pragma pack ()
 

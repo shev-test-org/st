@@ -41,6 +41,7 @@
 #include "../inc/bcs_sdk.h"
 #include "global.h"
 #include "filelock.h"
+#include "FPListOp.h"
 
 // global parameters
 static StorageMgr *storageMgr = NULL;
@@ -241,7 +242,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 	int res;
 	bool locked = false;
 	struct stat st = {0};
-	file_header_t *header = NULL;
+	FileMeta *fileMeta = NULL;
 	(void) fi;
 
 	_try {
@@ -260,46 +261,46 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		if (st.st_size == 0) {
 			try_return(res = -ENOBUFS);
 		}
-		assert(st.st_size > sizeof(file_header_t));
+		assert(st.st_size > sizeof(FileMeta));
 
-		header = (file_header_t *)new char[st.st_size];
-		res = pread(fd, (char *)header, st.st_size, 0);
+		fileMeta = (FileMeta *)new char[st.st_size];
+		res = pread(fd, (char *)fileMeta, st.st_size, 0);
 		if (res == -1) {
 			try_return(res = -errno);
 		}
 
-		if (offset >= header->fileSize) {
+		if (offset >= fileMeta->header.fileSize) {
 			try_return(res = ENOBUFS);
 		}
 
 		// if in smallBuf
-		if (header->fileSize <= SMALL_FILE_SIZE) {
-			assert(st.st_size == sizeof(file_header_t));
+		if (fileMeta->header.fileSize <= SMALL_FILE_SIZE) {
+			assert(st.st_size == sizeof(FileMeta));
 
-			if (offset + size <= header->fileSize) {
-				memcpy(buf, header->smallBuf + offset, size);
+			if (offset + size <= fileMeta->header.fileSize) {
+				memcpy(buf,fileMeta->smallBuf + offset, size);
 				try_return(res = size);
 			}
 
-			if (offset + size > header->fileSize) {
-				memcpy(buf, header->smallBuf + offset, SMALL_FILE_SIZE - offset);
+			if (offset + size > fileMeta->header.fileSize) {
+				memcpy(buf, fileMeta->smallBuf + offset, SMALL_FILE_SIZE - offset);
 				try_return(res = SMALL_FILE_SIZE - offset);
 			}
 		} else {
-			int startOffset = offset / header->blockSize * header->blockSize;
+			int startOffset = offset / fileMeta->header.blockSize * fileMeta->header.blockSize;
 
 			char *p = buf;
 			int leftSize = size;
 			off_t fileOffset = offset;
 			res = 0;
 			//
-			while(startOffset < header->fileSize || leftSize == 0) {
+			while(startOffset < fileMeta->header.fileSize || leftSize == 0) {
 				assert(startOffset <= fileOffset);
-				FingurePoint *fp = getFP(header, startOffset / header->blockSize);
+				FingurePoint *fp = getFP(fileMeta, startOffset / fileMeta->header.blockSize);
 				Block *block = storageMgr->get(fp->md5);
 				assert(NULL != block);
-				assert(block->len == header->blockSize);
-				if (startOffset + header->blockSize >= fileOffset + leftSize) {
+				assert(block->len == fileMeta->header.blockSize);
+				if (startOffset + fileMeta->header.blockSize >= fileOffset + leftSize) {
 					memcpy(p, block->buf + fileOffset - startOffset,
 							leftSize);
 					res += leftSize;
@@ -308,24 +309,24 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 					leftSize = 0;
 				} else {
 					memcpy(p, block->buf + fileOffset - startOffset,
-							header->blockSize);
-					res += header->blockSize;
-					p += header->blockSize;
-					fileOffset += header->blockSize;
-					leftSize -= header->blockSize;
+							fileMeta->header.blockSize);
+					res += fileMeta->header.blockSize;
+					p += fileMeta->header.blockSize;
+					fileOffset += fileMeta->header.blockSize;
+					leftSize -= fileMeta->header.blockSize;
 				}
 
 				delete block;
 				block = NULL;
 
-				startOffset += header->blockSize;
+				startOffset += fileMeta->header.blockSize;
 			}
 		}
 
 	} _finally {
-		if (NULL != header) {
-			delete[] header;
-			header = NULL;
+		if (NULL != fileMeta) {
+			delete[] fileMeta;
+			fileMeta = NULL;
 		}
 
 		if (locked) {
@@ -342,108 +343,9 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 
 static int xmp_write(const char *path, const char *buf, size_t size,
 		off_t offset, struct fuse_file_info *fi) {
-	int fd;
-		int res;
-		bool locked = false;
-		struct stat st = {0};
-		file_header_t *header = NULL;
-		(void) fi;
 
-		_try {
-			fd = open(path, O_RDWR);
-			if (fd == -1) {
-				try_return(res = -errno);
-			}
 
-			res = write_lock(fd);
-			locked = true;
-
-			res = fstat(fd, &st);
-			if (res == -1) {
-				try_return(res = -errno);
-			}
-			if (st.st_size == 0) {
-				try_return(res = -ENOBUFS);
-			}
-			assert(st.st_size > sizeof(file_header_t));
-
-			header = (file_header_t *)new char[st.st_size];
-			res = pread(fd, (char *)header, st.st_size, 0);
-			if (res == -1) {
-				try_return(res = -errno);
-			}
-
-			if (offset >= header->fileSize) {
-				try_return(res = ENOBUFS);
-			}
-
-			// if in smallBuf
-			if (header->fileSize <= SMALL_FILE_SIZE) {
-				assert(st.st_size == sizeof(file_header_t));
-
-				if (offset + size <= header->fileSize) {
-//					memcpy(buf, (void *)header->smallBuf + offset, size);
-					try_return(res = size);
-				}
-
-				if (offset + size > header->fileSize) {
-//					memcpy(buf, header->smallBuf + offset, SMALL_FILE_SIZE - offset);
-					try_return(res = SMALL_FILE_SIZE - offset);
-				}
-			} else {
-				int startOffset = offset / header->blockSize * header->blockSize;
-
-				//char *p = buf;
-				char *p = NULL;
-				int leftSize = size;
-				off_t fileOffset = offset;
-				res = 0;
-				//
-				while(startOffset < header->fileSize || leftSize == 0) {
-					assert(startOffset <= fileOffset);
-					FingurePoint *fp = getFP(header, startOffset / header->blockSize);
-					Block *block = storageMgr->get(fp->md5);
-					assert(NULL != block);
-					assert(block->len == header->blockSize);
-					if (startOffset + header->blockSize >= fileOffset + leftSize) {
-						memcpy(p, block->buf + fileOffset - startOffset,
-								leftSize);
-						res += leftSize;
-						p += leftSize;
-						fileOffset += leftSize;
-						leftSize = 0;
-					} else {
-						memcpy(p, block->buf + fileOffset - startOffset,
-								header->blockSize);
-						res += header->blockSize;
-						p += header->blockSize;
-						fileOffset += header->blockSize;
-						leftSize -= header->blockSize;
-					}
-
-					delete block;
-					block = NULL;
-
-					startOffset += header->blockSize;
-				}
-			}
-
-		} _finally {
-			if (NULL != header) {
-				delete[] header;
-				header = NULL;
-			}
-
-			if (locked) {
-				un_lock(fd);
-			}
-
-			if (fd != -1) {
-				close(fd);
-			}
-		}
-
-		return res;
+		return 0;
 }
 
 static int xmp_statfs(const char *path, struct statvfs *stbuf) {
