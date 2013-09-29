@@ -68,21 +68,21 @@ Block* StorageMgr::get(string key)
 		block = memoryCache->get(key);
 		memoryCache->unlock();
 		if (NULL != block) {
-			_try_return(block);
+			try_return(block);
 		}
 
 		diskCache->lock();
 		diskCache->get(key);
 		diskCache->unlock();
 		if (NULL != block) {
-			_try_return(block);
+			try_return(block);
 		}
 
 		cloudStorage->lock();
 		cloudStorage->get(key);
 		cloudStorage->unlock();
 		if (NULL != block) {
-			_try_return(block);
+			try_return(block);
 		}
 	}_finally {
 		mgrLock.unlock();

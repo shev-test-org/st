@@ -30,6 +30,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <sys/time.h>
+#include <assert.h>
 #ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
 #endif
@@ -38,6 +39,11 @@
 #include "BaiDuCloudStorage.h"
 #include "StorageMgr.h"
 #include "../inc/bcs_sdk.h"
+#include "global.h"
+#include "filelock.h"
+
+// global parameters
+static StorageMgr *storageMgr = NULL;
 
 static int xmp_getattr(const char *path, struct stat *stbuf) {
 	int res;
@@ -233,36 +239,211 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		struct fuse_file_info *fi) {
 	int fd;
 	int res;
-
+	bool locked = false;
+	struct stat st = {0};
+	file_header_t *header = NULL;
 	(void) fi;
-	fd = open(path, O_RDONLY);
-	if (fd == -1)
-		return -errno;
 
-	res = pread(fd, buf, size, offset);
-	if (res == -1)
-		res = -errno;
+	_try {
+		fd = open(path, O_RDONLY);
+		if (fd == -1) {
+			try_return(res = -errno);
+		}
 
-	close(fd);
+		res = read_lock(fd);
+		locked = true;
+
+		res = fstat(fd, &st);
+		if (res == -1) {
+			try_return(res = -errno);
+		}
+		if (st.st_size == 0) {
+			try_return(res = -ENOBUFS);
+		}
+		assert(st.st_size > sizeof(file_header_t));
+
+		header = (file_header_t *)new char[st.st_size];
+		res = pread(fd, (char *)header, st.st_size, 0);
+		if (res == -1) {
+			try_return(res = -errno);
+		}
+
+		if (offset >= header->fileSize) {
+			try_return(res = ENOBUFS);
+		}
+
+		// if in smallBuf
+		if (header->fileSize <= SMALL_FILE_SIZE) {
+			assert(st.st_size == sizeof(file_header_t));
+
+			if (offset + size <= header->fileSize) {
+				memcpy(buf, header->smallBuf + offset, size);
+				try_return(res = size);
+			}
+
+			if (offset + size > header->fileSize) {
+				memcpy(buf, header->smallBuf + offset, SMALL_FILE_SIZE - offset);
+				try_return(res = SMALL_FILE_SIZE - offset);
+			}
+		} else {
+			int startOffset = offset / header->blockSize * header->blockSize;
+
+			char *p = buf;
+			int leftSize = size;
+			off_t fileOffset = offset;
+			res = 0;
+			//
+			while(startOffset < header->fileSize || leftSize == 0) {
+				assert(startOffset <= fileOffset);
+				FingurePoint *fp = getFP(header, startOffset / header->blockSize);
+				Block *block = storageMgr->get(fp->md5);
+				assert(NULL != block);
+				assert(block->len == header->blockSize);
+				if (startOffset + header->blockSize >= fileOffset + leftSize) {
+					memcpy(p, block->buf + fileOffset - startOffset,
+							leftSize);
+					res += leftSize;
+					p += leftSize;
+					fileOffset += leftSize;
+					leftSize = 0;
+				} else {
+					memcpy(p, block->buf + fileOffset - startOffset,
+							header->blockSize);
+					res += header->blockSize;
+					p += header->blockSize;
+					fileOffset += header->blockSize;
+					leftSize -= header->blockSize;
+				}
+
+				delete block;
+				block = NULL;
+
+				startOffset += header->blockSize;
+			}
+		}
+
+	} _finally {
+		if (NULL != header) {
+			delete[] header;
+			header = NULL;
+		}
+
+		if (locked) {
+			un_lock(fd);
+		}
+
+		if (fd != -1) {
+			close(fd);
+		}
+	}
+
 	return res;
 }
 
 static int xmp_write(const char *path, const char *buf, size_t size,
 		off_t offset, struct fuse_file_info *fi) {
 	int fd;
-	int res;
+		int res;
+		bool locked = false;
+		struct stat st = {0};
+		file_header_t *header = NULL;
+		(void) fi;
 
-	(void) fi;
-	fd = open(path, O_WRONLY);
-	if (fd == -1)
-		return -errno;
+		_try {
+			fd = open(path, O_RDWR);
+			if (fd == -1) {
+				try_return(res = -errno);
+			}
 
-	res = pwrite(fd, buf, size, offset);
-	if (res == -1)
-		res = -errno;
+			res = write_lock(fd);
+			locked = true;
 
-	close(fd);
-	return res;
+			res = fstat(fd, &st);
+			if (res == -1) {
+				try_return(res = -errno);
+			}
+			if (st.st_size == 0) {
+				try_return(res = -ENOBUFS);
+			}
+			assert(st.st_size > sizeof(file_header_t));
+
+			header = (file_header_t *)new char[st.st_size];
+			res = pread(fd, (char *)header, st.st_size, 0);
+			if (res == -1) {
+				try_return(res = -errno);
+			}
+
+			if (offset >= header->fileSize) {
+				try_return(res = ENOBUFS);
+			}
+
+			// if in smallBuf
+			if (header->fileSize <= SMALL_FILE_SIZE) {
+				assert(st.st_size == sizeof(file_header_t));
+
+				if (offset + size <= header->fileSize) {
+//					memcpy(buf, (void *)header->smallBuf + offset, size);
+					try_return(res = size);
+				}
+
+				if (offset + size > header->fileSize) {
+//					memcpy(buf, header->smallBuf + offset, SMALL_FILE_SIZE - offset);
+					try_return(res = SMALL_FILE_SIZE - offset);
+				}
+			} else {
+				int startOffset = offset / header->blockSize * header->blockSize;
+
+				//char *p = buf;
+				char *p = NULL;
+				int leftSize = size;
+				off_t fileOffset = offset;
+				res = 0;
+				//
+				while(startOffset < header->fileSize || leftSize == 0) {
+					assert(startOffset <= fileOffset);
+					FingurePoint *fp = getFP(header, startOffset / header->blockSize);
+					Block *block = storageMgr->get(fp->md5);
+					assert(NULL != block);
+					assert(block->len == header->blockSize);
+					if (startOffset + header->blockSize >= fileOffset + leftSize) {
+						memcpy(p, block->buf + fileOffset - startOffset,
+								leftSize);
+						res += leftSize;
+						p += leftSize;
+						fileOffset += leftSize;
+						leftSize = 0;
+					} else {
+						memcpy(p, block->buf + fileOffset - startOffset,
+								header->blockSize);
+						res += header->blockSize;
+						p += header->blockSize;
+						fileOffset += header->blockSize;
+						leftSize -= header->blockSize;
+					}
+
+					delete block;
+					block = NULL;
+
+					startOffset += header->blockSize;
+				}
+			}
+
+		} _finally {
+			if (NULL != header) {
+				delete[] header;
+				header = NULL;
+			}
+
+			if (locked) {
+				un_lock(fd);
+			}
+
+			if (fd != -1) {
+				close(fd);
+			}
+		}
+
+		return res;
 }
 
 static int xmp_statfs(const char *path, struct statvfs *stbuf) {
@@ -354,6 +535,12 @@ static int xmp_removexattr(const char *path, const char *name) {
 static struct fuse_operations xmp_oper;
 void test();
 
+static void* xmp_init (struct fuse_conn_info *conn)
+{
+	storageMgr = new StorageMgr();
+	return conn;
+}
+
 int main(int argc, char *argv[]) {
 	memset(&xmp_oper, 0x00, sizeof(xmp_oper));
 	xmp_oper.getattr = xmp_getattr;
@@ -388,6 +575,7 @@ int main(int argc, char *argv[]) {
 	xmp_oper.listxattr = xmp_listxattr;
 	xmp_oper.removexattr = xmp_removexattr;
 #endif
+	xmp_oper.init = xmp_init;
 
 	umask(0);
 	//return fuse_main(argc, argv, &xmp_oper, NULL);
