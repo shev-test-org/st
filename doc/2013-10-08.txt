@@ -1,0 +1,6 @@
+1.限制meomery/disk cache的大。丢弃旧的cache算法
+2.FPListOp:fp的分配，删除
+3.fuse deamon的read修改，write
+4.阿里云的接口实现。
+5.了解百度、阿里企业级云存储产品情况。
+红杉资本、IDG
