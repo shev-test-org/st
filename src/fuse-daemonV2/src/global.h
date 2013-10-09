@@ -22,10 +22,11 @@ typedef struct _FPList {
 	int fpCount;
 	int nextFpListOffset;
 
-	_FPList(int offsetToHeader, uint64_t startFPIndex, int fpCoun) {
+	_FPList(int offsetToHeader, uint64_t startFPIndex, int fpCount) {
 		this->offsetToHeader = offsetToHeader;
 		this->startFPIndex = startFPIndex;
 		this->fpCount = fpCount;
+		this->nextFpListOffset = 0;
 	}
 }FPList;
 

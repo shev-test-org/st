@@ -238,6 +238,9 @@ static int xmp_open(const char *path, struct fuse_file_info *fi) {
 
 static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		struct fuse_file_info *fi) {
+	assert(size > 0);
+	assert(offset >= 0);
+
 	int fd;
 	int res;
 	bool locked = false;
@@ -277,49 +280,33 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		if (fileMeta->header.fileSize <= SMALL_FILE_SIZE) {
 			assert(st.st_size == sizeof(FileMeta));
 
-			if (offset + size <= fileMeta->header.fileSize) {
-				memcpy(buf,fileMeta->smallBuf + offset, size);
-				try_return(res = size);
-			}
+			size_t minSize = min(size, SMALL_FILE_SIZE - offset);
+			memcpy(buf, fileMeta->smallBuf + offset, minSize);
+			try_return(res = minSize);
 
-			if (offset + size > fileMeta->header.fileSize) {
-				memcpy(buf, fileMeta->smallBuf + offset, SMALL_FILE_SIZE - offset);
-				try_return(res = SMALL_FILE_SIZE - offset);
-			}
 		} else {
-			int startOffset = offset / fileMeta->header.blockSize * fileMeta->header.blockSize;
+			off_t startOffset = offset;
+			off_t endOffset = min(startOffset + size, fileMeta->header.fileSize);
+			assert(startOffset < endOffset);
 
 			char *p = buf;
-			int leftSize = size;
-			off_t fileOffset = offset;
 			res = 0;
-			//
-			while(startOffset < fileMeta->header.fileSize || leftSize == 0) {
-				assert(startOffset <= fileOffset);
+
+			while ( startOffset < endOffset) {
 				FingurePoint *fp = getFP(fileMeta, startOffset / fileMeta->header.blockSize);
+				assert(NULL != fp);
 				Block *block = storageMgr->get(fp->md5);
 				assert(NULL != block);
 				assert(block->len == fileMeta->header.blockSize);
-				if (startOffset + fileMeta->header.blockSize >= fileOffset + leftSize) {
-					memcpy(p, block->buf + fileOffset - startOffset,
-							leftSize);
-					res += leftSize;
-					p += leftSize;
-					fileOffset += leftSize;
-					leftSize = 0;
-				} else {
-					memcpy(p, block->buf + fileOffset - startOffset,
-							fileMeta->header.blockSize);
-					res += fileMeta->header.blockSize;
-					p += fileMeta->header.blockSize;
-					fileOffset += fileMeta->header.blockSize;
-					leftSize -= fileMeta->header.blockSize;
-				}
+
+				size_t minSize = min(endOffset - startOffset, block->len - startOffset % fileMeta->header.blockSize);
+				memcpy(p, block->buf + startOffset % fileMeta->header.blockSize, minSize);
+				res += minSize;
+				p += minSize;
+				startOffset += minSize;
 
 				delete block;
 				block = NULL;
-
-				startOffset += fileMeta->header.blockSize;
 			}
 		}
 
