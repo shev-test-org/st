@@ -26,20 +26,26 @@ typedef struct _FPList {
 		this->offsetToHeader = offsetToHeader;
 		this->startFPIndex = startFPIndex;
 		this->fpCount = fpCount;
-		this->nextFpListOffset = 0;
+		this->nextFpListOffset = -1;
 	}
 }FPList;
 
 
 typedef struct _FileHeader {
 	int magic; //'STBL'
-	int fileSize;
+	int fileSize;  // real file size
+	int metaSize; // FileMeta size. used for next FPList offset when extending.
 	int blockSize;
 	int blockNum;
 	int crc;
 
-
 }FileHeader;
+
+#define updateCRC(fileHeader) do { \
+	FileHeader *fh = &(FileHeader)fileHeader; \
+	fh->magic = 'STBL'; \
+	fh->crc = fh->magic ^ fh->fileSize ^ fh->metaSize ^ fh->blockSize ^ fh->blockNum; \
+} while(0)
 
 typedef struct _FingerPoint {
 	char md5[33];
@@ -48,7 +54,7 @@ typedef struct _FingerPoint {
 /*
  * file meta on-disk structure:
  *
- * | header cxt | fpList1 | fp1 | fp2 | fp 3 | ... | fpList2 | fp1 | fp2 | fp 3 | ... |
+ * | header | fpList1 | fp1 | fp2 | fp 3 | ... | fpList2 | fp1 | fp2 | fp 3 | ... |
  *
  */
 typedef struct _FileMeta {

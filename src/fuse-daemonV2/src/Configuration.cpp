@@ -58,3 +58,11 @@ const string& Configuration::getWorkDir() const {
 void Configuration::setWorkDir(const string& workDir) {
 	this->workDir = workDir;
 }
+
+int Configuration::getFPListExtendSize() const {
+	return this->fpListExtendSize;
+}
+
+void Configuration::setFPListExtendSize(int fpListExtendSize) {
+	this->fpListExtendSize = fpListExtendSize;
+}

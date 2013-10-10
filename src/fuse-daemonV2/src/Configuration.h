@@ -22,6 +22,8 @@ public:
 	void setMemoryCacheSize(int memoryCacheSize);
 	const string& getWorkDir() const;
 	void setWorkDir(const string& workDir);
+	int Configuration::getFPListExtendSize() const;
+	void Configuration::setFPListExtendSize(int fpListExtendSize);
 
 protected:
 	static Configuration *INSTANCE;
@@ -32,6 +34,7 @@ private:
 	int blockSize;
 	int memoryCacheSize;
 	int diskCacheSize;
+	int fpListExtendSize;
 
 };
 

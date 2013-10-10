@@ -264,9 +264,9 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		if (st.st_size == 0) {
 			try_return(res = -ENOBUFS);
 		}
-		assert(st.st_size > sizeof(FileMeta));
+		assert(st.st_size >= sizeof(FileMeta));
 
-		fileMeta = (FileMeta *)new char[st.st_size];
+		fileMeta = new FileMeta;
 		res = pread(fd, (char *)fileMeta, st.st_size, 0);
 		if (res == -1) {
 			try_return(res = -errno);
@@ -295,6 +295,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 			while ( startOffset < endOffset) {
 				FingurePoint *fp = getFP(fileMeta, startOffset / fileMeta->header.blockSize);
 				assert(NULL != fp);
+				// Whether need to check fp->md5 is 0, or not?
 				Block *block = storageMgr->get(fp->md5);
 				assert(NULL != block);
 				assert(block->len == fileMeta->header.blockSize);
@@ -312,7 +313,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 
 	} _finally {
 		if (NULL != fileMeta) {
-			delete[] fileMeta;
+			delete fileMeta;
 			fileMeta = NULL;
 		}
 
@@ -330,7 +331,119 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 
 static int xmp_write(const char *path, const char *buf, size_t size,
 		off_t offset, struct fuse_file_info *fi) {
+	assert(NULL != path);
+	assert(NULL != buf);
+	assert(size > 0);
+	assert(offset >= 0);
 
+	int fd;
+	int res;
+	bool locked = false;
+	struct stat st = {0};
+	FileMeta *fileMeta = NULL;
+	(void) fi;
+
+	_try {
+		fd = open(path, O_RDWR); // don't consider create file.
+		if (fd == -1) {
+			try_return(res = -errno);
+		}
+
+		res = write_lock(fd);
+		locked =  true;
+
+		res = fstat(fd, &st);
+		if (res == -1) {
+			try_return(res = -errno);
+		}
+		if (st.st_size == 0) {
+			try_return(res = -ENOBUFS);
+		}
+		assert(st.st_size >= sizeof(FileMeta));
+
+		fileMeta = new FileMeta;
+		res = pread(fd, (char*)fileMeta, st.st_size, 0);
+		if (res == -1) {
+			try_return(res = -errno);
+		}
+
+		if (offset >= fileMeta->header.fileSize) {
+			try_return(res = ENOBUFS);
+		}
+
+		if (offset + size <= SMALL_FILE_SIZE && fileMeta->header.fileSize <= SMALL_FILE_SIZE) {
+			// write to smallBuf
+			assert(st.st_size == sizeof(FileMeta));
+
+			memcpy(fileMeta->smallBuf + offset, buf, size);
+			fileMeta->header.fileSize = max(fileMeta->header.fileSize, offset + size);
+		} else {
+			off_t startOffset = offset;
+			off_t endOffset = offset + size;
+
+			char *p = buf;
+			res = 0;
+			Block* block = NULL;
+			while (startOffset < endOffset) {
+				FingurePoint *fp = getFP(fileMeta, startOffset / fileMeta->header.blockSize);
+				if ( NULL == fp) {
+					// No fp found. extend FPList.
+					extendFPList(fd, fileMeta, startOffset / fileMeta->header.blockSize);
+					fp = getFP(fileMeta, startOffset / fileMeta->header.blockSize);
+				}
+				assert(NULL != fp);
+				FingurePoint zero;
+				memset(&zero, 0, sizeof(FingurePoint));
+				if (memcmp(fp, &zero, sizeof(FingurePoint)) == 0){
+					// No block exist.
+					char *buf = new char[fileMeta->header.blockSize];
+					memset(buf, 0, sizeof(fileMeta->header.blockSize)*sizeof(char));
+
+					block = new Block(0, buf, fileMeta->header.blockSize);
+					fileMeta->header.fileSize += fileMeta->header.blockSize;
+				} else {
+					block = storageMgr->get(fp->md5);
+				}
+				assert(NULL != block);
+				assert(block->len == fileMeta->header.blockSize);
+
+				size_t minSize = min(endOffset - startOffset, block->len - startOffset % fileMeta->header.blockSize);
+				memcpy(block->buf + startOffset % fileMeta->header.blockSize, p, minSize);
+
+				MD5 md5(block->buf, fileMeta->header.blockSize);
+				fp->md5 = md5.md5().c_str();
+
+				storageMgr->put(fp->md5, block->buf, fileMeta->header.blockSize);
+				res += minSize;
+				p += minSize;
+				startOffset += minSize;
+
+				delete block;
+				block = NULL;
+			}
+
+			updateCRC(fileMeta->header);
+			lseek(fd, 0, SEEK_SET);
+			pwrite(fd, (char*)fileMeta, fileMeta->header.metaSize, 0);
+
+		}
+	} _finally {
+		if (NULL != fileMeta) {
+			delete fileMeta;
+			fileMeta = NULL;
+		}
+
+		if (locked) {
+			un_lock(fd);
+		}
+
+		if (fd != -1) {
+			close(fd);
+		}
+	}
+
+
+	// write to fplist
 
 		return 0;
 }
