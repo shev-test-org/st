@@ -424,7 +424,7 @@ static int xmp_write(const char *path, const char *buf, size_t size,
 
 			updateCRC(fileMeta->header);
 			lseek(fd, 0, SEEK_SET);
-			pwrite(fd, (char*)fileMeta, fileMeta->header.metaSize, 0);
+			pwrite(fd, (char*)fileMeta, sizeof(FileMeta), 0);
 
 		}
 	} _finally {
