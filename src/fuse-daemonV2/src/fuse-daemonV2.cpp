@@ -202,11 +202,171 @@ static int xmp_chown(const char *path, uid_t uid, gid_t gid) {
 }
 
 static int xmp_truncate(const char *path, off_t size) {
-	int res;
+	assert(NULL != path);
+	assert(size >= 0);
 
-	res = truncate(path, size);
-	if (res == -1)
-		return -errno;
+	int fd;
+	int res;
+	bool locked = false;
+	struct stat st = {0};
+	FileMeta *fileMeta = NULL;
+	(void) fi;
+
+	_try {
+		fd = open(path, O_RDWR);
+		if (fd == -1) {
+			try_return(res = -errno);
+		}
+
+		res = write_lock(fd);
+		locked =  true;
+
+		res = fstat(fd, &st);
+		if (res == -1) {
+			try_return(res = -errno);
+		}
+		if (st.st_size == 0) {
+			try_return(res = -ENOBUFS);
+		}
+		assert(st.st_size >= sizeof(FileMeta));
+
+		fileMeta = new FileMeta;
+		res = pread(fd, (char*)fileMeta, st.st_size, 0);
+		if (res == -1) {
+			try_return(res = -errno);
+		}
+
+		if (size <= SMALL_FILE_SIZE) {
+			if (fileMeta->header.fileSize <= SMALL_FILE_SIZE) {
+				// In smallBuf
+				assert(st.st_size == sizeof(FileMeta));
+
+				if (size < fileMeta->header.fileSize){
+					memset(fileMeta->smallBuf + size, 0, fileMeta->header.fileSize - size);
+				}
+			} else {
+				// In fpList. need move to smallBuf from fpList.
+				char *p = fileMeta->smallBuf;
+				off_t startOffset = 0;
+				off_t endOffset = min(size, fileMeta->header.fileSize);
+
+				while ( startOffset < endOffset) {
+					FingurePoint *fp = getFP(fileMeta, startOffset / fileMeta->header.blockSize);
+					assert(NULL != fp);
+					Block *block = storageMgr->get(fp->md5);
+					assert(NULL != block);
+					assert(block->len == fileMeta->header.blockSize);
+
+					size_t minSize = min(endOffset - startOffset, block->len);
+					memcpy(p, block->buf, minSize);
+					p += minSize;
+					startOffset += minSize;
+
+					delete block;
+					block = NULL;
+				}
+
+				// ToDo: delete useless fpList.
+			}
+		} else {
+			if (fileMeta->header.fileSize <= SMALL_FILE_SIZE) {
+				// In smallBuf. need move to fpList.
+				assert(st.st_size == sizeof(FileMeta));
+
+				off_t startOffset = 0;
+				off_t endOffset = fileMeta->header.fileSize;
+
+				while (startOffset < endOffset) {
+					FingurePoint *fp = getFP(fileMeta, startOffset / fileMeta->header.blockSize);
+					assert(NULL != fp);
+					Block* block = storageMgr->get(fp->md5);
+					assert(NULL != block && block->len == fileMeta->header.blockSize);
+
+					size_t minSize = min(endOffset - startOffset, fileMeta->header.blockSize);
+					memcpy(block->buf, fileMeta->smallBuf, minSize);
+
+					startOffset += minSize;
+				}
+
+			} else {
+				// In fpList.
+				if (size < fileMeta->header.fileSize) {
+					off_t startOffset = size;
+					off_t endOffset = fileMeta->header.fileSize;
+
+					while (startOffset < endOffset) {
+						FingurePoint *fp = getFP(fileMeta, startOffset / fileMeta->header.blockSize);
+						assert(NULL != fp);
+
+						if ( startOffset % fileMeta->header.blockSize != 0) {
+							Block *block = storageMgr->get(fp->md5);
+							assert(NULL != block);
+							assert(block->len == fileMeta->header.blockSize);
+							memset(block->buf + startOffset % fileMeta->header.blockSize, 0,
+									block->len - startOffset % fileMeta->header.blockSize);
+
+							delete block;
+							block = NULL;
+						} else {
+							storageMgr->remove(fp->md5);
+							memset(fp->md5, 0, sizeof(fp->md5));
+						}
+					}
+				}
+			}
+
+			off_t startOffset = fileMeta->header.fileSize;
+			off_t endOffset = size;
+
+			Block* block = NULL;
+			while (startOffset < endOffset) {
+				FingurePoint *fp = getFP(fileMeta, startOffset / fileMeta->header.blockSize);
+				if ( NULL == fp) {
+					// No fp found. extend FPList.
+					extendFPList(fd, fileMeta, startOffset / fileMeta->header.blockSize);
+					fp = getFP(fileMeta, startOffset / fileMeta->header.blockSize);
+				}
+				assert(NULL != fp);
+				// No block exist.
+				char *buf = new char[fileMeta->header.blockSize];
+				memset(buf, 0, sizeof(fileMeta->header.blockSize)*sizeof(char));
+
+				block = new Block(0, buf, fileMeta->header.blockSize);
+				fileMeta->header.fileSize += fileMeta->header.blockSize;
+				assert(NULL != block);
+				assert(block->len == fileMeta->header.blockSize);
+
+				MD5 md5(block->buf, fileMeta->header.blockSize);
+				fp->md5 = md5.md5().c_str();
+
+				storageMgr->put(fp->md5, block->buf, fileMeta->header.blockSize);
+				startOffset += block->len;
+
+				delete block;
+				block = NULL;
+			}
+
+			fileMeta->header.fileSize = min(size, fileMeta->header.fileSize);
+			//ToDo: update meta info, such as mtime.
+			updateCRC(fileMeta->header);
+			lseek(fd, 0, SEEK_SET);
+			pwrite(fd, (char*)fileMeta, sizeof(FileMeta), 0);
+
+		}
+	} _finally {
+		if (NULL != fileMeta) {
+			delete fileMeta;
+			fileMeta = NULL;
+		}
+
+		if (locked) {
+			un_lock(fd);
+		}
+
+		if (fd != -1) {
+			close(fd);
+		}
+	}
 
 	return 0;
 }
@@ -344,7 +504,7 @@ static int xmp_write(const char *path, const char *buf, size_t size,
 	(void) fi;
 
 	_try {
-		fd = open(path, O_RDWR); // don't consider create file.
+		fd = open(path, O_RDWR);
 		if (fd == -1) {
 			try_return(res = -errno);
 		}
@@ -393,8 +553,8 @@ static int xmp_write(const char *path, const char *buf, size_t size,
 				}
 				assert(NULL != fp);
 				FingurePoint zero;
-				memset(&zero, 0, sizeof(FingurePoint));
-				if (memcmp(fp, &zero, sizeof(FingurePoint)) == 0){
+				memset(zero.md5, 0, sizeof(zero.md5));
+				if (memcmp(fp, zero.md5, sizeof(fp->md5)) == 0){
 					// No block exist.
 					char *buf = new char[fileMeta->header.blockSize];
 					memset(buf, 0, sizeof(fileMeta->header.blockSize)*sizeof(char));
@@ -442,10 +602,7 @@ static int xmp_write(const char *path, const char *buf, size_t size,
 		}
 	}
 
-
-	// write to fplist
-
-		return 0;
+	return 0;
 }
 
 static int xmp_statfs(const char *path, struct statvfs *stbuf) {

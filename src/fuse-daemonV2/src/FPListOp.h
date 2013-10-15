@@ -13,6 +13,6 @@
 #include <stdio.h>
 
 FingurePoint* getFP(FileMeta *fileMeta, int index);
-void extendFPList(int fd, FileMeta *fileMeta, int index);
+int extendFPList(int fd, FileMeta *fileMeta, int index);
 
 #endif /* FPLISTOP_H_ */

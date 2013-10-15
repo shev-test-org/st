@@ -26,10 +26,11 @@ FingurePoint* getFP(FileMeta *fileMeta, int index)
 	return NULL;
 }
 
-void extendFPList(int fd, FileMeta *fileMeta, int index) {
+int extendFPList(int fd, FileMeta *fileMeta, int index) {
 	assert(NULL != fileMeta);
 	assert(index >= 0);
 	FPList *fpList = &fileMeta->firstFPList;
+	int res = 0;
 
 	Configuration* config =  Configuration::getInstance();
 
@@ -44,6 +45,7 @@ void extendFPList(int fd, FileMeta *fileMeta, int index) {
 
 	fpList = &fileMeta->firstFPList;
 	int fpCount = min(config->getFPListExtendSize(), upIndex - index);
+	res = fpCount;
 
 	FPList *new_fpList = new FPList(fileMeta->header.metaSize, index, fpCount);
 	memset((void*)new_fpList->offsetToHeader + sizeof(FPList), 0, new_fpList->fpCount * sizeof(FingurePoint));
@@ -54,4 +56,6 @@ void extendFPList(int fd, FileMeta *fileMeta, int index) {
 	lseek(fd, fileMeta->header.metaSize, SEEK_SET);
 	pwrite(fd, new_fpList, sizeof(FPList) + fpCount * sizeof(FingurePoint), 0);
 	fileMeta->header.metaSize += sizeof(FPList) + fpCount * sizeof(FingurePoint);
+
+	return res;
 }
